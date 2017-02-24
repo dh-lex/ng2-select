@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, ElementRef, OnInit, forwardRef } from '@angular/core';
+import { Component, Input, Output, EventEmitter, ElementRef, Renderer, OnInit, forwardRef } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { SelectItem } from './select-item';
@@ -106,6 +106,16 @@ let styles = `
   }
 `;
 
+const KEY_ENTER: number = 13;
+const KEY_TAB: number = 9;
+const KEY_BACKSPACE:number = 8;
+const KEY_ESC:number = 27;
+const KEY_LEFT:number = 37;
+const KEY_RIGHT:number = 39;
+const KEY_UP:number = 38;
+const KEY_DOWN:number = 40;
+const KEY_DELETE:number = 46;
+
 @Component({
   selector: 'ng-select',
   styles: [styles],
@@ -126,6 +136,7 @@ let styles = `
      class="ui-select-container dropdown open">
     <div [ngClass]="{'ui-disabled': disabled}"></div>
     <div class="ui-select-match"
+         (keydown)="inputEvent($event)"
          *ngIf="!inputMode">
       <span tabindex="-1"
           class="btn btn-default btn-secondary form-control ui-select-toggle"
@@ -142,12 +153,14 @@ let styles = `
         </a>
       </span>
     </div>
-    <input type="text" autocomplete="false" tabindex="-1"
+    <input type="text"
+           autocomplete="false"
+           tabindex="-1"
            (keydown)="inputEvent($event)"
            (keyup)="inputEvent($event, true)"
            [disabled]="disabled"
            class="form-control ui-select-search"
-           *ngIf="inputMode"
+           *ngIf="inputMode && !readOnlyMode"
            placeholder="{{active.length <= 0 ? placeholder : ''}}">
      <!-- options template -->
      <ul *ngIf="optionsOpened && options && options.length > 0 && !firstItemHasChildren"
@@ -259,6 +272,7 @@ export class SelectComponent implements OnInit, ControlValueAccessor {
   @Input() public textField:string = 'text';
   @Input() public childrenField:string = 'children';
   @Input() public multiple:boolean = false;
+  @Input() public readOnlyMode:boolean = true;
 
   @Input()
   public set items(value:Array<any>) {
@@ -334,11 +348,12 @@ export class SelectComponent implements OnInit, ControlValueAccessor {
   private _optionsOpened:boolean = false;
   private behavior:OptionsBehavior;
   private inputValue:string = '';
+  private readOnlyQuery:string = '';
   private _items:Array<any> = [];
   private _disabled:boolean = false;
   private _active:Array<SelectItem> = [];
 
-  public constructor(element:ElementRef, private sanitizer:DomSanitizer) {
+  public constructor(element:ElementRef, private sanitizer:DomSanitizer, private renderer:Renderer) {
     this.element = element;
     this.clickedOutside = this.clickedOutside.bind(this);
   }
@@ -348,79 +363,94 @@ export class SelectComponent implements OnInit, ControlValueAccessor {
   }
 
   public inputEvent(e:any, isUpMode:boolean = false):void {
-    // tab
-    if (e.keyCode === 9) {
+    if (e.keyCode === KEY_TAB) {
       return;
     }
-    if (isUpMode && (e.keyCode === 37 || e.keyCode === 39 || e.keyCode === 38 ||
-      e.keyCode === 40 || e.keyCode === 13)) {
+    if (isUpMode && (e.keyCode === KEY_LEFT || e.keyCode === KEY_RIGHT || e.keyCode === KEY_UP ||
+      e.keyCode === KEY_DOWN || e.keyCode === KEY_ENTER)) {
       e.preventDefault();
       return;
     }
-    // backspace
-    if (!isUpMode && e.keyCode === 8) {
-      let el:any = this.element.nativeElement
-        .querySelector('div.ui-select-container > input');
-      if (!el.value || el.value.length <= 0) {
-        if (this.active.length > 0) {
-          this.remove(this.active[this.active.length - 1]);
+    if (!isUpMode && e.keyCode === KEY_BACKSPACE) {
+      if (!this.readOnlyMode) {
+        let el: any = this.element.nativeElement.querySelector('div.ui-select-container > input');
+        if (!el.value || el.value.length <= 0) {
+          if (this.active.length > 0) {
+            this.remove(this.active[this.active.length - 1]);
+          }
+          e.preventDefault();
         }
+      } else {
+        if (this.readOnlyQuery.length <= 0) {
+          if (this.active.length > 0) {
+            this.remove(this.active[this.active.length - 1]);
+          }
+        }
+        this.readOnlyQuery = this.readOnlyQuery.length !== 0 ? this.readOnlyQuery.slice(0, -1) : this.readOnlyQuery;
         e.preventDefault();
       }
     }
-    // esc
-    if (!isUpMode && e.keyCode === 27) {
+    if (!isUpMode && e.keyCode === KEY_ESC) {
       this.hideOptions();
       this.element.nativeElement.children[0].focus();
+      if (this.readOnlyMode) {
+        this.readOnlyQuery = '';
+      }
       e.preventDefault();
       return;
     }
-    // del
-    if (!isUpMode && e.keyCode === 46) {
+    if (!isUpMode && e.keyCode === KEY_DELETE) {
       if (this.active.length > 0) {
         this.remove(this.active[this.active.length - 1]);
       }
       e.preventDefault();
     }
-    // left
-    if (!isUpMode && e.keyCode === 37 && this._items.length > 0) {
+    if (!isUpMode && e.keyCode === KEY_LEFT && this._items.length > 0) {
       this.behavior.first();
       e.preventDefault();
       return;
     }
-    // right
-    if (!isUpMode && e.keyCode === 39 && this._items.length > 0) {
+    if (!isUpMode && e.keyCode === KEY_RIGHT && this._items.length > 0) {
       this.behavior.last();
       e.preventDefault();
       return;
     }
-    // up
-    if (!isUpMode && e.keyCode === 38) {
+    if (!isUpMode && e.keyCode === KEY_UP) {
       this.behavior.prev();
       e.preventDefault();
       return;
     }
-    // down
-    if (!isUpMode && e.keyCode === 40) {
+    if (!isUpMode && e.keyCode === KEY_DOWN) {
       this.behavior.next();
       e.preventDefault();
       return;
     }
-    // enter
-    if (!isUpMode && e.keyCode === 13) {
+    if (!isUpMode && e.keyCode === KEY_ENTER) {
       if (this.active.indexOf(this.activeOption) === -1) {
         this.selectActiveMatch();
         this.behavior.next();
+        if (this.readOnlyMode) {
+          this.readOnlyQuery = '';
+        }
       }
       e.preventDefault();
       return;
     }
     let target = e.target || e.srcElement;
-    if (target && target.value) {
-      this.inputValue = target.value;
-      this.behavior.filter(new RegExp(escapeRegexp(this.inputValue), 'ig'));
-      this.doEvent('typed', this.inputValue);
-    }else {
+    if ((target && target.value) || (this.readOnlyMode && e.key)) {
+      if (!this.readOnlyMode) {
+        this.inputValue = target.value;
+        this.behavior.filter(new RegExp(escapeRegexp(this.inputValue), 'ig'));
+        this.doEvent('typed', this.inputValue);
+      } else {
+        if (e.keyCode >= 48 && e.keyCode <= 90) {this.readOnlyQuery += e.key;}
+        if (this.readOnlyQuery.length >= 0) {
+          this.behavior.filter(new RegExp(escapeRegexp(this.readOnlyQuery), 'ig'));
+          this.doEvent('typed', this.readOnlyQuery);
+
+        }
+      }
+    } else {
       this.open();
     }
   }
@@ -479,41 +509,45 @@ export class SelectComponent implements OnInit, ControlValueAccessor {
     if (this._disabled === true) {
       return;
     }
-    this.inputMode = !this.inputMode;
+    this.inputMode = this.readOnlyMode ? false : !this.inputMode;
     if (this.inputMode === true && ((this.multiple === true && e) || this.multiple === false)) {
       this.focusToInput();
+      this.open();
+    }
+    if (!this.inputMode && this.readOnlyMode) {
+      this.focusToSpan();
       this.open();
     }
   }
 
   protected  mainClick(event:any):void {
-    if (this.inputMode === true || this._disabled === true) {
+    if (this.inputMode || this._disabled || this.readOnlyMode) {
       return;
     }
-    if (event.keyCode === 46) {
+    if (event.keyCode === KEY_DELETE) {
       event.preventDefault();
       this.inputEvent(event);
       return;
     }
-    if (event.keyCode === 8) {
+    if (event.keyCode === KEY_BACKSPACE) {
       event.preventDefault();
       this.inputEvent(event, true);
       return;
     }
-    if (event.keyCode === 9 || event.keyCode === 13 ||
-      event.keyCode === 27 || (event.keyCode >= 37 && event.keyCode <= 40)) {
+    if (event.keyCode === KEY_TAB || event.keyCode === KEY_ENTER ||
+      event.keyCode === KEY_ESC || (event.keyCode >= KEY_LEFT && event.keyCode <= KEY_DOWN)) {
       event.preventDefault();
       return;
     }
-    this.inputMode = true;
-    let value = String
-      .fromCharCode(96 <= event.keyCode && event.keyCode <= 105 ? event.keyCode - 48 : event.keyCode)
-      .toLowerCase();
-    this.focusToInput(value);
-    this.open();
-    let target = event.target || event.srcElement;
-    target.value = value;
-    this.inputEvent(event);
+    if (!this.readOnlyMode) {
+      this.inputMode = true;
+      let value = String
+        .fromCharCode(96 <= event.keyCode && event.keyCode <= 105 ? event.keyCode - 48 : event.keyCode)
+        .toLowerCase();
+      this.focusToInput(value);
+      this.open();
+      this.inputEvent(event);
+    }
   }
 
   protected  selectActive(value:SelectItem):void {
@@ -535,6 +569,15 @@ export class SelectComponent implements OnInit, ControlValueAccessor {
       if (el) {
         el.focus();
         el.value = value;
+      }
+    }, 0);
+  }
+
+  private focusToSpan():void {
+    setTimeout(() => {
+      let el = this.element.nativeElement.querySelector('div.ui-select-match');
+      if (el) {
+        this.renderer.invokeElementMethod(el, 'focus');
       }
     }, 0);
   }
