@@ -273,6 +273,7 @@ export class SelectComponent implements OnInit, ControlValueAccessor {
   @Input() public childrenField:string = 'children';
   @Input() public multiple:boolean = false;
   @Input() public readOnlyMode:boolean = true;
+  @Input() public noResultsString:string = 'No Results Found!';
 
   @Input()
   public set items(value:Array<any>) {
@@ -722,6 +723,14 @@ export class GenericBehavior extends Behavior implements OptionsBehavior {
     if (this.actor.options.length > 0) {
       this.actor.activeOption = this.actor.options[0];
       super.ensureHighlightVisible();
+    }
+    if (this.actor.options.length === 0 && this.actor.noResultsString !== '') {
+      this.actor.activeOption = new SelectItem({
+        // FixMe: read only string is not working......
+        id: 'readOnlyHolder',
+        text: this.actor.noResultsString,
+        children: undefined
+      });
     }
   }
 }
